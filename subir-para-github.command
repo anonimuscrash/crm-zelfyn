@@ -156,8 +156,55 @@ read -rs TOKEN
 echo ""
 
 if [ -z "$TOKEN" ]; then
-  erro "Token em branco. Rode o script de novo."
+  erro "Token em branco.
+
+Você apertou Enter sem colar nada. Como o Terminal não mostra
+o que você cola, isso é fácil de acontecer.
+
+Use Command+V para colar e só depois aperte Enter."
 fi
+
+# Valida o token contra a API do GitHub antes de gastar um push
+# inteiro para descobrir que ele não presta.
+echo ""
+echo "Verificando o token..."
+CODIGO=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: token $TOKEN" \
+  https://api.github.com/user)
+
+if [ "$CODIGO" = "401" ]; then
+  erro "O GitHub recusou este token (401).
+
+Provavelmente ele expirou, foi revogado, ou foi copiado incompleto.
+
+Gere um novo em https://github.com/settings/tokens
+Escolha 'Generate new token (CLASSIC)' — não o fine-grained."
+elif [ "$CODIGO" != "200" ]; then
+  erro "Não consegui validar o token (resposta $CODIGO).
+Verifique sua conexão com a internet."
+fi
+
+LOGIN=$(curl -s -H "Authorization: token $TOKEN" \
+  https://api.github.com/user | grep -o '"login"[^,]*' | cut -d'"' -f4)
+ok "Token válido — conta: $LOGIN"
+
+# Confere se o token realmente enxerga o repositório
+ACESSO=$(curl -s -o /dev/null -w "%{http_code}" \
+  -H "Authorization: token $TOKEN" \
+  https://api.github.com/repos/anonimuscrash/crm-zelfyn)
+
+if [ "$ACESSO" != "200" ]; then
+  erro "O token é válido, mas não tem acesso ao repositório crm-zelfyn.
+
+Ao gerar o token você precisa marcar a caixa 'repo'
+(a primeira da lista, que habilita acesso completo aos repositórios).
+
+Gere outro em https://github.com/settings/tokens marcando essa caixa."
+fi
+ok "Acesso ao repositório confirmado"
+
+# O usuário do push tem que bater com o dono do token
+USUARIO="$LOGIN"
 
 # ---------- 8. Push ----------
 echo ""
@@ -167,7 +214,15 @@ echo ""
 # O token vai só nesta chamada, não fica salvo no .git/config.
 URL_COM_TOKEN="https://${USUARIO}:${TOKEN}@github.com/anonimuscrash/crm-zelfyn.git"
 
-if git push -f "$URL_COM_TOKEN" main 2>&1 | sed "s|$TOKEN|••••••••|g"; then
+# O resultado do push é lido do PRÓPRIO git, não do sed que mascara o
+# token na saída — senão o `if` testaria o sucesso do sed e daria
+# "PRONTO" mesmo com falha de autenticação.
+set -o pipefail
+git push -f "$URL_COM_TOKEN" main 2>&1 | sed "s|$TOKEN|••••••••|g"
+RESULTADO=${PIPESTATUS[0]}
+set +o pipefail
+
+if [ "$RESULTADO" -eq 0 ]; then
   echo ""
   echo -e "${VERDE}${NEGRITO}"
   echo "════════════════════════════════════════════════"
