@@ -1,0 +1,19 @@
+Logos das integrações
+=====================
+
+Arquivos oficiais fornecidos pelo titular da conta.
+
+  whatsapp.png                versão única (funciona nos dois temas)
+  superfrete-on-light.png     tinta verde, para fundo claro
+  superfrete-on-dark.png      tinta branca, para fundo escuro
+
+Nomeados pelo CONTEXTO DE USO, não pela cor da tinta: "on-light"
+significa "para usar sobre fundo claro". Dizer "logo clara" seria
+ambíguo — clara para usar onde?
+
+Se um arquivo faltar, a interface exibe um ícone neutro no lugar e
+continua funcionando.
+
+Para adicionar outra integração com variantes, salve
+{nome}-on-light.png e {nome}-on-dark.png e passe `themed` no
+componente IntegrationLogo.

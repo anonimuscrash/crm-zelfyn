@@ -1,0 +1,82 @@
+# ============================================================
+# Serviço de WhatsApp por QR — WAHA
+#
+# Container SEPARADO da Operza, de propósito. Duas razões:
+#
+#   1. A sessão do WhatsApp precisa sobreviver a um redeploy da
+#      aplicação (§18). Se o WAHA subisse junto, todo deploy do
+#      frontend derrubaria a sessão e exigiria escanear o QR de novo.
+#   2. O WAHA carrega o motor do WhatsApp Web; acoplar isso à imagem
+#      da Operza triplicaria o tamanho e o tempo de build.
+#
+# A Operza fala com ele por HTTP e recebe eventos por webhook. Nada
+# mais. É o que permite trocar o WAHA por outro serviço mexendo em
+# um único arquivo do código (waha-provider.ts).
+#
+# Como subir no Coolify: crie um recurso novo do tipo "Docker
+# Compose", cole este arquivo, defina as variáveis e faça o deploy.
+# NÃO exponha a porta 3000 publicamente — veja a nota abaixo.
+# ============================================================
+
+services:
+  waha:
+    image: devlikeapro/waha:latest
+    container_name: operza-waha
+    restart: unless-stopped
+
+    environment:
+      # Chave que a Operza envia no header X-Api-Key. Gere com:
+      #   openssl rand -hex 32
+      WAHA_API_KEY: ${WAHA_API_KEY}
+
+      # Painel do WAHA. Deixe desabilitado em produção: ele permite
+      # ler conversas e encerrar sessões sem passar pela Operza.
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+
+      # NOWEB fala o protocolo multi-device direto, sem Chrome
+      # headless. Consome ordens de grandeza menos RAM que o motor
+      # WEBJS — a diferença entre rodar numa VPS de 4 GB e não rodar.
+      WHATSAPP_DEFAULT_ENGINE: NOWEB
+
+      # Persistência da sessão no volume, não em memória: é o que faz
+      # a conexão sobreviver a restart do container (§18).
+      WHATSAPP_FILES_FOLDER: /app/.sessions
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+
+      # Sem reconexão automática o operador teria que reescanear o QR
+      # a cada oscilação de rede.
+      WHATSAPP_START_SESSION: ""
+
+      TZ: America/Sao_Paulo
+
+    volumes:
+      - waha-sessions:/app/.sessions
+
+    # Sem `ports:`. O WAHA NÃO deve ser acessível pela internet —
+    # quem tiver a URL e a chave lê as conversas de todos os
+    # workspaces. A Operza o alcança pela rede interna do Docker,
+    # em http://operza-waha:3000.
+    #
+    # Se a Operza roda noutro projeto do Coolify, conecte os dois à
+    # mesma rede em vez de publicar a porta.
+    expose:
+      - "3000"
+
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+    # O motor NOWEB é leve, mas uma sessão com histórico grande pode
+    # crescer. O teto evita que ele coma a VPS inteira e derrube a
+    # Operza junto.
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+
+volumes:
+  waha-sessions:
